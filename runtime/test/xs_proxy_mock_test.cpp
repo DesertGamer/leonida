@@ -301,6 +301,27 @@ std::uint64_t mock_call(Mock* m, unsigned slot, const std::uint64_t* words) {
                 }
                 break;
             case 50: copy_array(m, slot, a3, a2); break;                    // (flags, count, objects, fence, value)
+            case 68: {                                                      // GetResourceAllocationInfo2
+                auto* ret = reinterpret_cast<D3D12_RESOURCE_ALLOCATION_INFO*>(a1);
+                const auto count = static_cast<std::uint32_t>(a3);
+                const auto* descs = reinterpret_cast<const D3D12_RESOURCE_DESC1*>(a4);
+                auto* info1 = reinterpret_cast<D3D12_RESOURCE_ALLOCATION_INFO1*>(words[4]);
+                if (descs && count > 0) {
+                    m->array[68][0] = static_cast<std::uint64_t>(descs[0].Layout);
+                    m->array[68][1] = static_cast<std::uint64_t>(descs[0].Flags);
+                    m->array[68][2] = descs[0].SamplerFeedbackMipRegion.Width |
+                                      descs[0].SamplerFeedbackMipRegion.Height |
+                                      descs[0].SamplerFeedbackMipRegion.Depth;
+                    if (count > 1) {
+                        const auto& last = descs[count - 1];
+                        m->array[68][3] = (static_cast<std::uint64_t>(last.Layout) << 32) |
+                                          static_cast<std::uint32_t>(last.Flags);
+                    }
+                }
+                if (ret) *ret = {0x40000, 0x10000};
+                if (info1 && count > 0) info1[0] = {0, 0x10000, 0x40000};
+                return a1;
+            }
             default: break;
         }
         return S_OK;
@@ -681,6 +702,35 @@ int check_levels() {
 
             xs::set_placed_at_va_pages_hook(nullptr);
             xs::set_placed_at_va_handler(nullptr);
+        }
+
+        // 86: Xbox CreatePipelineState -> PC slot 47 (ID3D12Device2)
+        void* pso_out = reinterpret_cast<void*>(1);
+        const HRESULT r86 = hr_of(raw(device, 86, 0, word(&kUnknownIid), word(&pso_out)));
+        if (l.level >= 2) {
+            EXPECT(r86 == S_OK && mock->calls[47] == 1 && mock->calls[86] == 0);
+        } else {
+            EXPECT(r86 == E_NOTIMPL && !pso_out && mock->calls[47] == 0 && mock->calls[86] == 0);
+        }
+
+        // 101: Xbox CreateStateObject -> PC slot 62 (ID3D12Device5)
+        void* so_out = reinterpret_cast<void*>(1);
+        const HRESULT r101 = hr_of(raw(device, 101, 0, word(&kUnknownIid), word(&so_out)));
+        if (l.level >= 5) {
+            EXPECT(r101 == S_OK && mock->calls[62] == 1 && mock->calls[101] == 0);
+        } else {
+            EXPECT(r101 == E_NOTIMPL && !so_out && mock->calls[62] == 0 && mock->calls[101] == 0);
+        }
+
+        // 108: Xbox GetResourceAllocationInfo2 -> PC slot 68 (ID3D12Device8)
+        D3D12_RESOURCE_ALLOCATION_INFO alloc_info{1, 1};
+        const std::uint64_t r108 = raw(device, 108, word(&alloc_info), 1, 0, 0, 0);
+        if (l.level >= 8) {
+            EXPECT(r108 == word(&alloc_info) && alloc_info.SizeInBytes == 0x40000 && alloc_info.Alignment == 0x10000 &&
+                   mock->calls[68] == 1 && mock->calls[108] == 0);
+        } else {
+            EXPECT(r108 == word(&alloc_info) && alloc_info.SizeInBytes == UINT64_MAX && alloc_info.Alignment == 0 &&
+                   mock->calls[68] == 0 && mock->calls[108] == 0);
         }
 
         Mock* const queue_mock = reinterpret_cast<Mock*>(real_queue);
