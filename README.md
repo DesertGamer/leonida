@@ -46,11 +46,14 @@ Original author's Git Mirror: https://git.notrexed.dev/notrexed/Leonida
 
 ## Project status
 
-**Early. Nothing is playable yet.** The retail executable now runs inside the loader far enough to be measured: with
-the pull requests named there, one RTX 4090 run reached the first descriptor heap (stop 13 of
-[docs/retail_boot_chain.md](docs/retail_boot_chain.md); no draw or present yet), and an integration branch with local
-fixes and `LEONIDA_STUB_PIPELINES=1` ran the title's frame loop until a 900 s timeout
-([docs/retail_boot_intel_host.md](docs/retail_boot_intel_host.md)). Plain `main` stops earlier on that Intel host.
+**Early. Nothing is playable yet.** The retail executable now runs inside the loader far enough to be measured, but
+only with open pull requests or local stand-ins on top of `main`. One RTX 4090 run with local stand-ins reached the
+first descriptor heap (stop 13 of [docs/retail_boot_chain.md](docs/retail_boot_chain.md); the stand-ins are local, not
+pull requests). With seven open pull requests, `main` reaches the title's frame loop and presents on an RTX 5070
+(888,983 presents in 420 s, recorded in issue #14), but the picture is black. An integration branch with local fixes
+and `LEONIDA_STUB_PIPELINES=1` ran the frame loop until a 900 s timeout with every pipeline stubbed and nothing
+rendered ([docs/retail_boot_intel_host.md](docs/retail_boot_intel_host.md)). Plain `main` ends in CRT startup on that
+Intel host.
 These are single-machine measurements, not a supported boot; [docs/boot.md](docs/boot.md) is the runbook.
 
 | What | Status |
@@ -65,7 +68,7 @@ These are single-machine measurements, not a supported boot; [docs/boot.md](docs
 | Texture dictionaries and world texture pools (DDS) | ✅ Exported. `rpf9dump` decodes BCPack BC1, BC3, BC4 and BC5 chunks in strict mode and skips BC6H, BC7 and chunks that need unconfirmed history; the assets stage then completes what it can with a clean-room decoder (`tools/bcpack.py`, which `tools/ttpf_assets.py` runs through `tools/ttpf_mips.py`) that rebuilds BC1, BC3, BC4, BC5, BC6H and BC7, and records the rest as a `BCPackLimitation` in `manifest.json` (most BC6H/BC7 chunks and the unconfirmed-history ones need a local history table, which the repo does not ship) ([notes](docs/textures.md)) |
 | Audio banks (AWC: Opus, XMA2) | ✅ Exported whole. Opus repackaged **losslessly** as Ogg Opus; PCM (codec 0/2) as WAV; XMA2 decoded with ffmpeg. `--wav` adds 16-bit PCM WAV ([notes](docs/audio.md)) |
 | Music/radio config | ? Measured. **1,589** audio-config records with exact durations and AWC stream ids; station grouping and content-id lists; no per-track start offsets ([notes](docs/audio_config.md)) |
-| PE loader and import shims | ⚠️ Runs a stand-in executable end to end (`gta6rt --run`: CRT startup, statics, heap, files, threads, GDK imports through the shims, exit code back). Controllers through a GameInput shim on SDL3 (any controller SDL supports, rumble, DualSense trigger effects and lightbar; built when SDL3 is installed or with `-DLEONIDA_SDL3_FETCH=ON`, [notes](docs/gameinput.md)). `--trace-d3d12` logs every D3D12 call and its outcome for the first boot. On the real executable it gets through startup and D3D12 device creation; the stops after that are in [docs/retail_boot_chain.md](docs/retail_boot_chain.md) |
+| PE loader and import shims | ⚠️ Runs a stand-in executable end to end (`gta6rt --run`: CRT startup, statics, heap, files, threads, GDK imports through the shims, exit code back). Controllers through a GameInput shim on SDL3 (any controller SDL supports, rumble, DualSense trigger effects and lightbar; built when SDL3 is installed or with `-DLEONIDA_SDL3_FETCH=ON`, [notes](docs/gameinput.md)). `--trace-d3d12` logs every D3D12 call and its outcome for the first boot. On the real executable, plain `main` ends in CRT startup on the Intel host ([docs/retail_boot_intel_host.md](docs/retail_boot_intel_host.md)); with the open pull requests and stand-ins it gets through startup and D3D12 device creation, and the stops after that are in [docs/retail_boot_chain.md](docs/retail_boot_chain.md) |
 | Xbox D3D12 → Vulkan | ⚠️ In progress. A Vulkan-backed device behind the Xbox-ABI proxy creates queues, command lists, fences, descriptor heaps, committed, placed and reserved resources, render-target and depth views (3D targets included), texture views and samplers (2D, cube, 1D and 3D views, the depth and stencil planes of depth-stencil textures, packed formats such as B5G6R5, B4G4R4A4 and R9G9B9E5, buffer SRVs — raw, structured and typed; they go into the bindless set), root signatures, pipelines and query heaps, and draws run on Vulkan. Barriers, clears, uploads, copies (BC included), colour resolves, predication, CPU-side texture reads and writes, and occlusion, timestamp and pipeline-statistics queries run on Vulkan, checked on one GPU. The console-shaped command-list proxy, the measured `PresentX` queue slots (30/32, layout-detected) wired to the presentation core, and `AllocateUploadMemory` (list slot 148, a mapped-upload arena whose addresses translate to buffer device addresses in root descriptors and IA/SO views) cover the console-ABI surface the package measures. Still open: the console list tail and the descriptor-table record model ([plan](docs/d3d12_vulkan.md)) |
 | Ray tracing (BVH) | ⚠️ In progress. `BuildRaytracingAccelerationStructure` builds BLASes and TLASes on the GPU in the console's XDXR BVH4 layout (the default; `LEONIDA_RT_AS=khr` uses Vulkan's own acceleration structures instead), which the translated shaders walk themselves through `image_bvh_intersect_ray` (all four triangle node types, TRI0-TRI3, with the barycentric remap byte); the GPU builder writes TRI0 and TRI1 leaves. Updates refit instead of rebuilding, and clone, compaction and the compacted/current postbuild sizes work; checked against a CPU reference on synthetic scenes. The build descriptions are recovered from the package's `XboxBvhBuilder.dll` ([notes](docs/xdxr.md)). The game's `*_bvh4.rpf` packs are measured: offline-built, dehydrated BLASes that rehydrate through that DLL with their geometry from the drawables in `levels.rpf` (measured on 8 of the 10 sampled BLAS; [notes](docs/bvh.md)). Not done in the builder: serialization. TRI1 pairing (no memory saved yet) and BOX16 nodes for `MINIMIZE_MEMORY` BLASes (an assumed switch) are in ([notes](docs/bvh.md)). Open: whether the game rehydrates the packs or rebuilds them |
 
@@ -82,9 +85,9 @@ Nothing is playable on any platform yet (see *Project status*). What runs where 
 | Platform | Today |
 |---|---|
 | Windows | Everything: `make_game.py`, the tools, and the runtime (`gta6rt` and the D3D12 → Vulkan layer) with its tests. |
-| Linux | The translator, the asset tools and the Vulkan GPU test tools build and run natively (tested on RADV and NVIDIA). The runtime is Windows code: it cross-compiles with clang-cl and xwin, and its tests run under Wine or Proton (*The Windows runtime on Linux, under Wine or Proton* below). The game is meant to run the same way, under Wine or Proton with the D3D12 layer on native Vulkan (#217). `./Build.sh` starts the build; [docs/linux.md](docs/linux.md) has the packages and the steps. |
-| macOS (Apple Silicon) | The Python tools and the Vulkan test tools run natively, on MoltenVK (Homebrew) or KosmicKrisp. The runtime is Windows code and runs as on Linux, under Wine: CrossOver, arm64 with FEX or x86-64 under Rosetta (#1706, #1707, #1924; #3119 fixes the last loader tests there). Known gaps: no geometry stage and no `VK_EXT_mesh_shader` (those tests are skipped), 32-wide subgroups (wave64 shaders run emulated), and MoltenVK's float handling (`PerVertexKHR`, NaN compares, -0, the cost of `NoContraction`); [docs/testing.md](docs/testing.md) lists each (#2947). |
-| AMD RDNA1 (RX 5000) | A supported target: close to the console's RDNA2, and its 64-wide subgroups run the wave64 shaders natively. RX 5700 XT results pass the GPU test suite (#146); on RADV, pixel shaders without fragment barycentrics have a known difference (*Known problems* in [docs/testing.md](docs/testing.md)) (#330). |
+| Linux | The translator, the asset tools and the Vulkan GPU test tools build and run natively (tested on RADV and NVIDIA). The runtime is Windows code: it cross-compiles with clang-cl and xwin, and its tests run under Wine or Proton (*The Windows runtime on Linux, under Wine or Proton* below). The game is meant to run the same way, under Wine or Proton with the D3D12 layer on native Vulkan. `./Build.sh` starts the build; [docs/linux.md](docs/linux.md) has the packages and the steps. |
+| macOS (Apple Silicon) | The Python tools and the Vulkan test tools run natively, on MoltenVK (Homebrew) or KosmicKrisp. The runtime is Windows code and runs as on Linux, under Wine: CrossOver, arm64 with FEX or x86-64 under Rosetta. Known gaps: no geometry stage and no `VK_EXT_mesh_shader` (those tests are skipped), 32-wide subgroups (wave64 shaders run emulated), and MoltenVK's float handling (`PerVertexKHR`, NaN compares, -0, the cost of `NoContraction`); [docs/testing.md](docs/testing.md) lists each. |
+| AMD RDNA1 (RX 5000) | A supported target: close to the console's RDNA2, and its 64-wide subgroups run the wave64 shaders natively. RX 5700 XT results pass the GPU test suite; on RADV, pixel shaders without fragment barycentrics have a known difference (*Known problems* in [docs/testing.md](docs/testing.md)). |
 
 GPU results from every platform are collected in [`gpu-test-results/`](gpu-test-results); how to run the tests is in [docs/testing.md](docs/testing.md).
 
@@ -162,7 +165,7 @@ subgroups or its subgroup size is unknown. It also checks whether the runtime's 
 shaders 64-wide. With `--mesh-compute`, only compute subgroup support is needed.
 
 On AMD's Windows driver, `auto` uses native wave64 on RDNA1 and RDNA2 when the runtime's GPU supports it, even
-if another GPU is 32-wide or `vulkaninfo` is unavailable. That driver can crash on emulated LDS code (#857).
+if another GPU is 32-wide or `vulkaninfo` is unavailable. That driver can crash on emulated LDS code.
 For RDNA1 cards without mesh support, the decision uses the compute stage, which can run wave64 without native
 mesh support.
 
@@ -172,7 +175,7 @@ Use `--wave64-emulate on` to force emulation or `--wave64-emulate off` to force 
 
 Four fallback flags are forwarded to the translator the same way, saved next to the translated shaders, and changing
 them translates them again: `--no-float-controls` (drop `SignedZeroInfNanPreserve`, for devices whose pipeline check
-skips a shader without `shaderSignedZeroInfNanPreserveFloat32`; needs PR #664's translator flag), `--bary-fallback`
+skips a shader without `shaderSignedZeroInfNanPreserveFloat32`), `--bary-fallback`
 (read raw barycentrics from an interpolated input, for devices without `VK_KHR_fragment_shader_barycentric`),
 `--texel-offset-fallback` (fold `image_sample*_o` offsets into the coordinate, for devices without
 `VK_KHR_maintenance8`) and `--mesh-compute` (mesh shaders as compute, for devices without `VK_EXT_mesh_shader`;
