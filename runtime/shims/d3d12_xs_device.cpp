@@ -2737,7 +2737,8 @@ std::uint64_t proxy_get_resource_allocation_info2(DeviceProxy* self, std::uint64
             // The same PC flag set as slot 133: up to RAYTRACING_ACCELERATION_STRUCTURE (0x100) and
             // USE_TIGHT_ALIGNMENT (0x400), with 0x200 dropped.
             constexpr std::uint32_t kPcResourceFlagsMask = 0x5FFu;
-            d.Flags = static_cast<D3D12_RESOURCE_FLAGS>(static_cast<std::uint32_t>(d.Flags) & kPcResourceFlagsMask);
+            d.Flags = static_cast<D3D12_RESOURCE_FLAGS>(
+                without_depth_stencil_uav(d.Dimension, static_cast<std::uint32_t>(d.Flags) & kPcResourceFlagsMask));
             cleaned[i] = d;
         }
         descs_to_pass = cleaned.data();

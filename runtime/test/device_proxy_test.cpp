@@ -661,6 +661,30 @@ int main(int argc, char** argv) {
                       xbox_info1[1].SizeInBytes == pc_info1[1].SizeInBytes,
                   "slot 108 C-ABI GetResourceAllocationInfo2 with 56-byte Xbox descs matches PC Device8");
             check(rt::d3d12_xs::device_slot_hits(108) == 1, "slot 108 hit counter is 1");
+
+            D3D12_RESOURCE_DESC depth_uav{};
+            depth_uav.Dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D;
+            depth_uav.Width = 256;
+            depth_uav.Height = 256;
+            depth_uav.DepthOrArraySize = 1;
+            depth_uav.MipLevels = 1;
+            depth_uav.Format = DXGI_FORMAT_R32G8X24_TYPELESS;
+            depth_uav.SampleDesc.Count = 1;
+            depth_uav.Layout = static_cast<D3D12_TEXTURE_LAYOUT>(0x101);
+            depth_uav.Flags = D3D12_RESOURCE_FLAG_ALLOW_DEPTH_STENCIL | D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS;
+            D3D12_RESOURCE_DESC1 pc_depth{};
+            std::memcpy(&pc_depth, &depth_uav, sizeof(D3D12_RESOURCE_DESC));
+            pc_depth.Layout = D3D12_TEXTURE_LAYOUT_UNKNOWN;
+            const D3D12_RESOURCE_ALLOCATION_INFO refused = real_device8->GetResourceAllocationInfo2(0, 1, &pc_depth, nullptr);
+            check(refused.SizeInBytes == UINT64_MAX,
+                  "the PC device refuses a depth-stencil texture with unordered access (negative control)");
+            pc_depth.Flags = D3D12_RESOURCE_FLAG_ALLOW_DEPTH_STENCIL;
+            const D3D12_RESOURCE_ALLOCATION_INFO depth_want = real_device8->GetResourceAllocationInfo2(0, 1, &pc_depth, nullptr);
+            D3D12_RESOURCE_ALLOCATION_INFO depth_got{};
+            get_alloc_info2(&depth_got, device.Get(), 0, 1, &depth_uav, nullptr);
+            check(depth_want.SizeInBytes != UINT64_MAX && depth_got.SizeInBytes == depth_want.SizeInBytes &&
+                      depth_got.Alignment == depth_want.Alignment,
+                  "slot 108 sizes a console depth-stencil texture with unordered access as the depth-stencil texture");
         }
     }
 
