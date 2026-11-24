@@ -23,9 +23,11 @@ version of this page was written from runs like that and was wrong; the figures 
 | `main` + #601 (`6fbb08cb8`) | 1,639 calls, 1,619 ok, 20 `called` without an outcome; the last is `CreateUnorderedAccessView` (#1639); then the title's `int3`, at another place than above |
 | `main` + #601 + #417 | the same 1,639 calls and the same last call as with #601 alone |
 
-Passes on `main`: `make_game.py --stages check,shaders,runtime` (26,503 shaders translated: 2,236 VS, 12,101 PS,
-2,689 CS, 9,282 mesh, 195 geometry), `--dry-run` and `--init` (exit 0, no exception, 4 `DllMain` ok, no unimplemented
-import). The 4 minute limit was not reached in any run (the shell reported 3 each time).
+Passes on `main`: `make_game.py --stages check,shaders,runtime` (the log ends with `exit=0`, 43 minutes; the merged
+`shaders/spirv/index.json` of the main corpus has 26,503 entries), `--dry-run` and `--init` (exit 0, no exception, 4
+`DllMain` ok, no unimplemented import). The three runs above were taken before the `shaders` stage had written its
+`index.json`, so they ran without translated shaders; section 4 is the run with them. The 4 minute limit was not
+reached in any run (the shell reported 3 for the runs above).
 
 The startup trace of the `main` run has 25 events and no bad line: 5 `map`, 2 `tls_callback`, 4 `dllmain`, 5
 `xmem_attributes`, 1 `xmem_physical_pages` (attributes `0x280`, 11,360 pages), 6 `debug_string` (text not shown) and 1
@@ -60,13 +62,42 @@ For comparison only: [retail_boot_intel_host.md](retail_boot_intel_host.md) reco
 its integration branch (a C++ throw in `XboxBvhBuilder.dll`). This run has one exception in its trace, the `int3`, so it
 is not shown to be that stop, and the trees and CPUs differ.
 
-## 4. What this does not show
+## 4. With the translated shaders and `LEONIDA_SKIP_INT3=1`
 
-One run per tree, no repeat, no debugger, and `LEONIDA_SKIP_INT3=1` was not run on the Vulkan build. Which instruction
-the last `int3` guards is not known. #417 did not change the stop in this run; whether it matters further on is not
-shown.
+`main` + #601 + #417, `LEONIDA_SHADERS` pointing at the work folder's `shaders/spirv`, `LEONIDA_SKIP_INT3=1`. Two runs,
+the second after the build had finished; the shader folder differed between them.
 
-## 5. Reproduce
+| | run A, folder still being completed | run B, finished folder |
+|---|---|---|
+| `translated shaders` in the log | 26,576 | 29,104 |
+| D3D12 calls traced | 1,639, the last `CreateUnorderedAccessView` | 1,655, the last two `CreateShaderResourceView` |
+| `int3_skipped` events | 1 | 2 |
+| end | write access violation in the title at 32.0 s | read access violation in the title at 9.0 s |
+
+The shell reported 139 for both. Both are an access violation in the title, not a C++ throw.
+
+- The same run without `LEONIDA_SHADERS` printed `no translated shaders`, and the title's first compute pipeline then
+  had nothing to load.
+- In both runs the log holds the first call of device slot 16 (`CreateRootSignature`) and slot 62 (`CreateComputePipelineState`),
+  and right after it `root signature usable for graphics only: root parameter 8 does not fit in the user SGPRs from s4
+  (spill array not modelled)`. This is the refusal that the `finding:` in the coordination issue ties to the 52 compute
+  shaders embedded in `XboxBvhBuilder.dll`; it is the same message, and these runs do not establish more than that.
+- Run B does not stop at that refusal. After it the title creates four committed resources, a command allocator and four
+  command lists (each closed at once), a descriptor heap and two shader-resource views, and the log shows the first
+  calls of device slots 39, 27, 41 and 61 (the last two forwarded). What the title does with the refused signature is not
+  shown.
+
+So with the shaders in place the boot is past the missing-shader stop and the signature refusal does not end the run
+by itself. Why run A ended earlier than run B was not isolated: the shader folder differs, and neither run was repeated.
+
+## 5. What this does not show
+
+No repeat of any run, no debugger. Which instruction the last `int3` guards is not known, and the two runs of section 4
+disagree with each other. #417 did not change the stop in the runs of section 1; whether it matters further on is not
+shown. The `translated shaders` count of section 4 depends on how far the build's last step had got, and was not tied
+to the shader groups of the index.
+
+## 6. Reproduce
 
 The commands of [boot.md](boot.md) section 2, with `--overlay` and an empty `--trace` name, after checking that the
 log carries the `Vulkan device:` line. Keep the traces out of the repository: they hold addresses of the executable.
