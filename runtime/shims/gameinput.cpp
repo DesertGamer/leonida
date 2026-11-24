@@ -194,6 +194,7 @@ rt::gameinput::Config read_config() {
 // ---- objects ----------------------------------------------------------------------------------------------------
 
 class Device;
+void note_gamepad_viewed(Device* d, uint32_t buttons);
 class ForceFeedbackEffect;
 
 struct Snapshot {
@@ -278,6 +279,7 @@ public:
     bool STDMETHODCALLTYPE GetGamepadState(GameInputGamepadState* state) override {
         if (!state) return false;
         *state = s_.gamepad;
+        note_gamepad_viewed(device_, s_.gamepad.buttons);
         return true;
     }
     bool STDMETHODCALLTYPE GetRacingWheelState(void*) override { return false; }
@@ -544,6 +546,8 @@ public:
     leonida::InputFamily family = leonida::InputFamily::Xbox;  // what kind of device it really is (active_input)
     Snapshot last_snap{};  // what the latest reading holds
     uint64_t button_hold_until_us[32] = {};
+    uint32_t held_buttons = 0;
+    std::atomic<uint32_t> unseen_buttons{0};
     uint64_t last_reading_us = 0;  // for the motion cadence: readings stream at ~125 Hz on pads with sensors
     uint64_t motors_sent_at = 0, triggers_sent_at = 0, battery_at = 0;
     bool ds_sent_once = false;
@@ -568,6 +572,7 @@ Reading::Reading(Device* device, const Snapshot& s, uint64_t seq, uint64_t ts, u
     device_->AddRef();
 }
 Reading::~Reading() { device_->Release(); }
+void note_gamepad_viewed(Device* d, uint32_t buttons) { d->unseen_buttons.fetch_and(~buttons); }
 void Reading::GetDevice(IGameInputDevice** device) {
     if (!device) return;
     device_->AddRef();
@@ -1967,10 +1972,17 @@ void poll_once() {
         Snapshot snap = read_pad(d);
         read_raw(d, &snap);
         if (const uint32_t hold_ms = s.config.button_hold_ms; hold_ms != 0) {
+            const uint32_t pressed = snap.gamepad.buttons;
+            const uint32_t rising = pressed & ~d->held_buttons;
+            d->held_buttons = pressed;
+            d->unseen_buttons.fetch_or(rising);
+            const uint32_t unseen = d->unseen_buttons.load();
             for (uint32_t bit = 0; bit < 32; ++bit) {
                 const uint32_t mask = 1u << bit;
-                if (snap.gamepad.buttons & mask) d->button_hold_until_us[bit] = now + uint64_t{hold_ms} * 1000;
-                else if (now < d->button_hold_until_us[bit]) snap.gamepad.buttons |= mask;
+                if (rising & mask) d->button_hold_until_us[bit] = now + uint64_t{hold_ms} * 1000;
+                if (!(unseen & mask) || (pressed & mask)) continue;
+                if (now < d->button_hold_until_us[bit]) snap.gamepad.buttons |= mask;
+                else d->unseen_buttons.fetch_and(~mask);
             }
         }
         const bool guide_changed = d->last_snap.guide != snap.guide;

@@ -911,13 +911,25 @@ void test_keyboard_pad(IGameInput* input) {
     check(rt::gameinput::config().button_hold_ms == 300, "button hold: LEONIDA_BUTTON_HOLD_MS=300");
     g_keys[VK_RETURN] = true;
     rt::gameinput::poll();
-    check(pad_state(input, kb).buttons == GameInputGamepadA, "button hold: a press reads as pressed");
     g_keys[VK_RETURN] = false;
     rt::gameinput::poll();
-    check(pad_state(input, kb).buttons == GameInputGamepadA, "button hold: a released button still reads as pressed");
+    check(pad_state(input, kb).buttons == GameInputGamepadA,
+          "button hold: a tap the title has not read yet still reads as pressed");
+    rt::gameinput::poll();
+    check(pad_state(input, kb).buttons == 0, "button hold: once the title has read it, it is released");
+    g_keys[VK_RETURN] = true;
+    rt::gameinput::poll();
+    check(pad_state(input, kb).buttons == GameInputGamepadA, "button hold: a press the title reads while held");
+    g_keys[VK_RETURN] = false;
+    rt::gameinput::poll();
+    check(pad_state(input, kb).buttons == 0, "button hold: a press already read is not stretched after release");
+    g_keys[VK_RETURN] = true;
+    rt::gameinput::poll();
+    g_keys[VK_RETURN] = false;
+    rt::gameinput::poll();
     Sleep(450);
     rt::gameinput::poll();
-    check(pad_state(input, kb).buttons == 0, "button hold: it reads as released once the time has passed");
+    check(pad_state(input, kb).buttons == 0, "button hold: a tap nobody reads is released after the time");
     set_env("LEONIDA_BUTTON_HOLD_MS", nullptr);
     rt::gameinput::reload_config();
     g_keys[VK_RETURN] = true;
