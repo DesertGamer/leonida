@@ -150,6 +150,8 @@ rt::gameinput::Config read_config() {
         c.ds_trigger_gain = std::clamp(static_cast<float>(std::atof(g.c_str())), 0.0f, 4.0f);
     if (const std::string g = env("LEONIDA_MOUSE_SENSITIVITY"); !g.empty())
         c.mouse_sensitivity = std::clamp(static_cast<float>(std::atof(g.c_str())), 0.1f, 10.0f);
+    if (const std::string h = env("LEONIDA_BUTTON_HOLD_MS"); !h.empty())
+        c.button_hold_ms = static_cast<uint32_t>(std::clamp(std::atoi(h.c_str()), 0, 5000));
     if (const std::string f = env("LEONIDA_DS_TRIGGER_FREQ"); !f.empty())
         c.ds_trigger_frequency = static_cast<uint8_t>(std::clamp(std::atoi(f.c_str()), 1, 255));
     if (const std::string l = env("LEONIDA_DS_LIGHTBAR"); !l.empty()) {
@@ -541,6 +543,7 @@ public:
     rt::gameinput::OutputState sent{};
     leonida::InputFamily family = leonida::InputFamily::Xbox;  // what kind of device it really is (active_input)
     Snapshot last_snap{};  // what the latest reading holds
+    uint64_t button_hold_until_us[32] = {};
     uint64_t last_reading_us = 0;  // for the motion cadence: readings stream at ~125 Hz on pads with sensors
     uint64_t motors_sent_at = 0, triggers_sent_at = 0, battery_at = 0;
     bool ds_sent_once = false;
@@ -1963,6 +1966,13 @@ void poll_once() {
     for (Device* d : connected) {
         Snapshot snap = read_pad(d);
         read_raw(d, &snap);
+        if (const uint32_t hold_ms = s.config.button_hold_ms; hold_ms != 0) {
+            for (uint32_t bit = 0; bit < 32; ++bit) {
+                const uint32_t mask = 1u << bit;
+                if (snap.gamepad.buttons & mask) d->button_hold_until_us[bit] = now + uint64_t{hold_ms} * 1000;
+                else if (now < d->button_hold_until_us[bit]) snap.gamepad.buttons |= mask;
+            }
+        }
         const bool guide_changed = d->last_snap.guide != snap.guide;
         const bool changed = !(d->last_snap == snap);
         d->last_snap = snap;

@@ -903,6 +903,30 @@ void test_keyboard_pad(IGameInput* input) {
     g_focus = true;
     test_keyboard_pad_sticks(input, kb);
 
+    set_env("LEONIDA_BUTTON_HOLD_MS", "99999");
+    rt::gameinput::reload_config();
+    check(rt::gameinput::config().button_hold_ms == 5000, "button hold: the value clamps to 5000 ms");
+    set_env("LEONIDA_BUTTON_HOLD_MS", "300");
+    rt::gameinput::reload_config();
+    check(rt::gameinput::config().button_hold_ms == 300, "button hold: LEONIDA_BUTTON_HOLD_MS=300");
+    g_keys[VK_RETURN] = true;
+    rt::gameinput::poll();
+    check(pad_state(input, kb).buttons == GameInputGamepadA, "button hold: a press reads as pressed");
+    g_keys[VK_RETURN] = false;
+    rt::gameinput::poll();
+    check(pad_state(input, kb).buttons == GameInputGamepadA, "button hold: a released button still reads as pressed");
+    Sleep(450);
+    rt::gameinput::poll();
+    check(pad_state(input, kb).buttons == 0, "button hold: it reads as released once the time has passed");
+    set_env("LEONIDA_BUTTON_HOLD_MS", nullptr);
+    rt::gameinput::reload_config();
+    g_keys[VK_RETURN] = true;
+    rt::gameinput::poll();
+    g_keys[VK_RETURN] = false;
+    rt::gameinput::poll();
+    check(rt::gameinput::config().button_hold_ms == 0 && pad_state(input, kb).buttons == 0,
+          "button hold: unset, a released button reads as released at once");
+
     // Turning it off removes the pad; turning it on again brings back the same device object.
     set_env("LEONIDA_KEYBOARD_PAD", "off");
     rt::gameinput::reload_config();
